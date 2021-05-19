@@ -28,6 +28,7 @@ void local_dotp(double *acc, double *a, double *b, int n);
 
 // Auxiliary functions
 void setup_grid(proc_info_t* grid);
+void gen_matrix(double *local_mat, int local_dim);
 void read_matrix(double *local_mat, int local_dim, int mat_dim, proc_info_t *grid);
 void write_matrix(double *local_mat, int local_dim, int mat_dim, proc_info_t *grid);
 
@@ -40,20 +41,30 @@ int main(int argc, char *argv[]) {
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     setup_grid(&grid);
+    srand(921 * grid.my_rank);
 
 #if DEBUG
-    int local_dim = 2;
+    int mat_dim = 4; // Debug with 4x4 matrix and 4 processors
 #else
-    int local_dim = 1000; 
+    int mat_dim = 3360; // Multiple of 4, 6, 8, 10, 12, 14, 16
 #endif
-    int mat_dim = grid.side_len * local_dim;
+    int local_dim = mat_dim / grid.side_len;
+    if (mat_dim % grid.side_len != 0) {
+        printf("Error. mat_dim must be a multiple of grid.side_len\n");
+        return 1;
+    }
 
     double *mat_a_block = (double*) malloc(local_dim * local_dim * sizeof(double));
     double *mat_b_block = (double*) malloc(local_dim * local_dim * sizeof(double));
     double *mat_c_block;
 
+#if DEBUG
     read_matrix(mat_a_block, local_dim, mat_dim, &grid);
     read_matrix(mat_b_block, local_dim, mat_dim, &grid);
+#else
+    gen_matrix(mat_a_block, local_dim);
+    gen_matrix(mat_b_block, local_dim);
+#endif
 
     double start_time, stop_time, elapsed_time;
     start_time = MPI_Wtime();
@@ -168,6 +179,14 @@ void setup_grid(proc_info_t* grid) {
     MPI_Cart_sub(grid->comm, free_coords, &grid->col_comm);
 }
 
+void gen_matrix(double *local_mat, int local_dim) {
+    for (int i = 0; i < local_dim; i++) {
+        for (int j = 0; j < local_dim; j++) {
+            local_mat[i * local_dim + j] = (1 / (double)RAND_MAX) * rand();
+        }
+    }
+}
+
 void read_matrix(double *local_mat, int local_dim, int mat_dim, proc_info_t *grid) {
     int dest;
     int coords[2];
@@ -186,20 +205,12 @@ void read_matrix(double *local_mat, int local_dim, int mat_dim, proc_info_t *gri
                 MPI_Cart_rank(grid->comm, coords, &dest);
                 if (dest == 0) {
                     for (int mat_col = 0; mat_col < local_dim; mat_col++) {
-#if DEBUG
                         scanf("%lf", &local_mat[mat_row * local_dim + mat_col]);
-#else
-                        local_mat[mat_row * local_dim + mat_col] = (1 / (double)RAND_MAX) * rand();
-#endif
                     }
                 }
                 else {
                     for (int mat_col = 0; mat_col < local_dim; mat_col++) {
-#if DEBUG
                         scanf("%lf", &temp_row[mat_col]);
-#else
-                        temp_row[mat_col] = (1 / (double)RAND_MAX) * rand();
-#endif
                     }
                     MPI_Send(temp_row, local_dim, MPI_DOUBLE, dest, 0, grid->comm);
                 }
